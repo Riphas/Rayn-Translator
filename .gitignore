@@ -1,6 +1,4 @@
-# Compiled and build artifacts
-__pycache__/
-*.pyc
-
-# Logs and temp files
-app.log
+# Database files
+*.db
+*.db-shm
+*.db-wal

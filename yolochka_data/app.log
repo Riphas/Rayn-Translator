@@ -1,0 +1,86 @@
+2026-09-26 19:10:55,786 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:10:55,792 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/selftest.db)
+2026-09-26 19:10:55,792 [INFO] yolochka: DB: запись #1 в историю (420 мс, auto->ru, tesseract)
+2026-09-26 19:10:55,792 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] добавлено
+2026-09-26 19:10:55,792 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] уже существует
+2026-09-26 19:10:55,793 [INFO] yolochka: DB: Quizlet-экспорт 1 пар -> /workspace/yolochka_data/quizlet_test.txt
+2026-09-26 19:11:23,920 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:11:44,115 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:11:44,119 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/selftest.db)
+2026-09-26 19:12:02,935 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:12:20,438 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:12:20,443 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/selftest.db)
+2026-09-26 19:12:20,444 [INFO] yolochka: DB: запись #1 в историю (420 мс, auto->ru, tesseract)
+2026-09-26 19:12:20,444 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] добавлено
+2026-09-26 19:12:20,444 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] уже существует
+2026-09-26 19:12:20,444 [INFO] yolochka: DB: Quizlet-экспорт 1 пар -> /workspace/yolochka_data/quizlet_test.txt
+2026-09-26 19:12:20,504 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:12:20,505 [INFO] yolochka: Settings: 'source_lang' := 'ja'
+2026-09-26 19:12:20,506 [INFO] yolochka: Settings: 'target_lang' := 'de'
+2026-09-26 19:12:20,506 [INFO] yolochka: Settings: 'ui_lang' := 'en'
+2026-09-26 19:12:20,506 [INFO] yolochka: i18n: язык интерфейса переключён на 'en'
+2026-09-26 19:12:20,506 [INFO] yolochka: Settings: 'ui_lang' := 'ru'
+2026-09-26 19:12:20,506 [INFO] yolochka: i18n: язык интерфейса переключён на 'ru'
+2026-09-26 19:12:20,507 [INFO] yolochka: Settings: 'theme' := 'light'
+2026-09-26 19:12:20,546 [INFO] yolochka: Theme: применена тема 'Clean Light'
+2026-09-26 19:12:20,547 [INFO] yolochka: Settings: 'theme' := 'dark'
+2026-09-26 19:12:20,592 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:12:33,148 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:12:33,153 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/selftest.db)
+2026-09-26 19:12:33,153 [INFO] yolochka: DB: запись #1 в историю (420 мс, auto->ru, tesseract)
+2026-09-26 19:12:33,153 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] добавлено
+2026-09-26 19:12:33,153 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] уже существует
+2026-09-26 19:12:33,154 [INFO] yolochka: DB: Quizlet-экспорт 1 пар -> /workspace/yolochka_data/quizlet_test.txt
+2026-09-26 19:12:33,206 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:12:33,207 [INFO] yolochka: Settings: 'source_lang' := 'ja'
+2026-09-26 19:12:33,207 [INFO] yolochka: Settings: 'target_lang' := 'de'
+2026-09-26 19:12:33,207 [INFO] yolochka: Settings: 'ui_lang' := 'en'
+2026-09-26 19:12:33,207 [INFO] yolochka: i18n: язык интерфейса переключён на 'en'
+2026-09-26 19:12:33,208 [INFO] yolochka: Settings: 'ui_lang' := 'ru'
+2026-09-26 19:12:33,208 [INFO] yolochka: i18n: язык интерфейса переключён на 'ru'
+2026-09-26 19:12:33,208 [INFO] yolochka: Settings: 'theme' := 'light'
+2026-09-26 19:12:33,253 [INFO] yolochka: Theme: применена тема 'Clean Light'
+2026-09-26 19:12:33,253 [INFO] yolochka: Settings: 'theme' := 'dark'
+2026-09-26 19:12:33,298 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:12:49,359 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:12:49,364 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/selftest.db)
+2026-09-26 19:12:49,364 [INFO] yolochka: DB: запись #1 в историю (420 мс, auto->ru, tesseract)
+2026-09-26 19:12:49,364 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] добавлено
+2026-09-26 19:12:49,364 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] уже существует
+2026-09-26 19:12:49,364 [INFO] yolochka: DB: Quizlet-экспорт 1 пар -> /workspace/yolochka_data/quizlet_test.txt
+2026-09-26 19:12:49,413 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:12:49,415 [INFO] yolochka: Settings: 'source_lang' := 'ja'
+2026-09-26 19:12:49,415 [INFO] yolochka: Settings: 'target_lang' := 'de'
+2026-09-26 19:12:49,415 [INFO] yolochka: Settings: 'ui_lang' := 'en'
+2026-09-26 19:12:49,415 [INFO] yolochka: i18n: язык интерфейса переключён на 'en'
+2026-09-26 19:12:49,416 [INFO] yolochka: Settings: 'ui_lang' := 'ru'
+2026-09-26 19:12:49,416 [INFO] yolochka: i18n: язык интерфейса переключён на 'ru'
+2026-09-26 19:12:49,416 [INFO] yolochka: Settings: 'theme' := 'light'
+2026-09-26 19:12:49,457 [INFO] yolochka: Theme: применена тема 'Clean Light'
+2026-09-26 19:12:49,457 [INFO] yolochka: Settings: 'theme' := 'dark'
+2026-09-26 19:12:49,507 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:13:01,141 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:13:01,144 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/selftest.db)
+2026-09-26 19:13:01,144 [INFO] yolochka: DB: запись #1 в историю (420 мс, auto->ru, tesseract)
+2026-09-26 19:13:01,144 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] добавлено
+2026-09-26 19:13:01,145 [INFO] yolochka: DB: слово 'world'->'мир' [en->ru] уже существует
+2026-09-26 19:13:01,145 [INFO] yolochka: DB: Quizlet-экспорт 1 пар -> /workspace/yolochka_data/quizlet_test.txt
+2026-09-26 19:13:01,197 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:13:01,199 [INFO] yolochka: Settings: 'source_lang' := 'ja'
+2026-09-26 19:13:01,199 [INFO] yolochka: Settings: 'target_lang' := 'de'
+2026-09-26 19:13:01,199 [INFO] yolochka: Settings: 'ui_lang' := 'en'
+2026-09-26 19:13:01,199 [INFO] yolochka: i18n: язык интерфейса переключён на 'en'
+2026-09-26 19:13:01,200 [INFO] yolochka: Settings: 'ui_lang' := 'ru'
+2026-09-26 19:13:01,200 [INFO] yolochka: i18n: язык интерфейса переключён на 'ru'
+2026-09-26 19:13:01,200 [INFO] yolochka: Settings: 'theme' := 'light'
+2026-09-26 19:13:01,242 [INFO] yolochka: Theme: применена тема 'Clean Light'
+2026-09-26 19:13:01,243 [INFO] yolochka: Settings: 'theme' := 'dark'
+2026-09-26 19:13:01,285 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:13:08,807 [INFO] yolochka: DB: соединение готово, схема проверена (/workspace/yolochka_data/yolochka.db)
+2026-09-26 19:13:08,807 [INFO] yolochka: === Ёлочка Плюс стартует === Python 3.12.10, PyQt6, OCR: none
+2026-09-26 19:13:08,808 [INFO] yolochka: i18n: создан эталонный файл ru.json
+2026-09-26 19:13:08,808 [INFO] yolochka: i18n: создан эталонный файл en.json
+2026-09-26 19:13:08,832 [INFO] yolochka: i18n: подключён внешний файл ru.json
+2026-09-26 19:13:08,865 [INFO] yolochka: Theme: применена тема 'Luxury Dark'
+2026-09-26 19:13:08,878 [WARNING] yolochka: Hotkey: '~' не перехвачена глобально — выделяйте текст через меню трея
+2026-09-26 19:13:08,878 [INFO] yolochka: === Приложение готово к работе ===
