@@ -5,17 +5,23 @@
 
 Возможности:
   * Горячая клавиша "~" (тильда) -> затемнённый оверлей выделения области экрана.
-  * OCR выбранной области (pytesseract / EasyOCR, языки подставляются динамически из настроек).
-  * Асинхронный перевод через deep_translator (GoogleTranslator) в QThread,
-    попап с переводом появляется у курсора мыши.
-  * Regex-очистка текста после OCR (игровой/системный мусор: | _ ~ @ и т.п.).
-  * Вкладка "История": все переводы; оригинал разбит на кликабельные слова-кнопки,
-    клик по слову -> машинный перевод слова -> автоматическое добавление в "Словарь".
-  * Вкладка "Словарь": таблица пар "Оригинал - Перевод", экспорт для Quizlet (.txt, Tab-разделитель).
-  * Системный трей, темы Luxury Dark / Clean Light (переключатель прямо в настройках),
-    SQLite-хранение истории/словаря/настроек, подробное логирование в app.log.
+  * OCR выбранной области (pytesseract / EasyOCR). Языки НЕ зашиты в логику:
+    QComboBox "Язык экрана" (auto, ru, en, zh, ja) и "Язык перевода" (ru, en, es)
+    из вкладки "Настройки" подставляют ISO-коды в движки на лету, без перезапуска.
+  * Асинхронный перевод через deep_translator (GoogleTranslator) в QThread;
+    попап с переводом появляется у курсора мыши (целевое время < 2 секунд).
+  * Regex-очистка текста после OCR (игровой/системный мусор: | _ ~ @ ° и т.п.,
+    лишние пробелы, оборванные знаки препинания, переносы слов).
+  * Вкладка "История": все переводы; при выборе записи оригинал разбивается на
+    кликабельные кнопки-слова. Клик по слову -> мгновенный фоновый перевод
+    ТОЛЬКО этого слова -> карточка с кнопкой "Добавить в Словарь".
+  * Вкладка "Словарь": таблица пар "Оригинал - Перевод", кнопка "Экспорт для
+    Quizlet" сохраняет .txt, где слово и перевод разделены символом табуляции \\t.
+  * Системный трей, темы Luxury Dark / Clean Light (переключатель в настройках),
+    SQLite (история/словарь/настройки), подробное логирование в app.log.
 
-Зависимости: PyQt6, deep-translator, Pillow; опционально pytesseract (+ tesseract binary), easyocr.
+Зависимости: PyQt6, deep-translator, Pillow; опционально pytesseract (+ бинарь
+Tesseract) и easyocr. Установка:  pip install PyQt6 deep-translator Pillow
 Запуск:  python app.py
 """
 
@@ -40,6 +46,7 @@ def app_dir() -> Path:
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent
 
+
 DATA_DIR = app_dir() / "yolochka_data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "yolochka.db"
@@ -61,7 +68,7 @@ try:
     from PyQt6.QtCore import Qt, QThread, QTimer, QPoint, QRect, pyqtSignal, QObject
     from PyQt6.QtGui import (
         QAction, QColor, QCursor, QFont, QIcon, QImage, QPainter, QPen,
-        QPixmap, QKeySequence, QGuiApplication,
+        QPixmap, QGuiApplication,
     )
     from PyQt6.QtWidgets import (
         QApplication, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -78,7 +85,7 @@ except ImportError as e:
     MISSING_DEPS.append(f"deep-translator ({e})")
 
 try:
-    from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+    from PIL import Image, ImageOps, ImageFilter
 except ImportError as e:
     MISSING_DEPS.append(f"Pillow ({e})")
 
@@ -100,9 +107,9 @@ except Exception:
 OCR_AVAILABLE = HAS_PYTESSERACT or HAS_EASYOCR
 
 # -----------------------------------------------------------------------------
-# 1. Языковые конфигурации (никакого хардкода в логике — только эти таблицы)
-#    Чтобы добавить новый язык: допишите одну строку в UI_LANGS / OCR_LANGS /
-#    TRANSLATE_LANGS и, при желании, ключи locales/<код>.json.
+# 1. Языковые конфигурации. НИКАКОГО хардкода языков в логике — только таблицы.
+#    Новый язык = одна строка в OCR_LANGS / TRANSLATE_LANGS. Код распознавания
+#    и перевода от этого не меняется: функции принимают ISO-код как параметр.
 # -----------------------------------------------------------------------------
 
 UI_LANGS = {                      # локализация интерфейса
@@ -110,32 +117,35 @@ UI_LANGS = {                      # локализация интерфейса
     "en": "English",
 }
 
-OCR_LANGS = {                     # "Язык экрана" : ISO-код -> коды движков OCR
-    "auto": {   "label": "Автоопределение",      "tess": "eng+rus",       "easy": ["en", "ru"] },
-    "en":   {   "label": "Английский",           "tess": "eng",           "easy": ["en"] },
-    "ru":   {   "label": "Русский",              "tess": "rus",           "easy": ["ru"] },
-    "zh":   {   "label": "Китайский",            "tess": "chi_sim",       "easy": ["ch_sim"] },
-    "ja":   {   "label": "Японский",             "tess": "jpn",           "easy": ["ja"] },
+# QComboBox «Язык экрана (OCR)»: auto, ru, en, zh, ja — ПОРЯДОК элементов списка
+OCR_LANG_ORDER = ["auto", "ru", "en", "zh", "ja"]
+OCR_LANGS = {                     # ISO-код -> подписи в UI + коды движков OCR
+    "auto": {"label": "Автоопределение", "tess": "eng+rus",      "easy": ["en", "ru"]},
+    "ru":   {"label": "Русский",         "tess": "rus",          "easy": ["ru"]},
+    "en":   {"label": "Английский",      "tess": "eng",          "easy": ["en"]},
+    "zh":   {"label": "Китайский",       "tess": "chi_sim",      "easy": ["ch_sim"]},
+    "ja":   {"label": "Японский",        "tess": "jpn",          "easy": ["ja"]},
 }
 
-TRANSLATE_LANGS = {               # "Язык перевода" : ISO-код deep_translator
+# QComboBox «Язык перевода»: ru, en, es — значения = ISO-коды deep_translator
+TRANSLATE_LANG_ORDER = ["ru", "en", "es"]
+TRANSLATE_LANGS = {
     "ru": "Русский",
     "en": "Английский",
     "es": "Испанский",
-    "de": "Немецкий",
 }
 
 DEFAULT_SETTINGS = {
     "ui_lang": "ru",
     "theme": "dark",
-    "source_lang": "auto",
-    "target_lang": "ru",
+    "source_lang": "auto",        # значение QComboBox «Язык экрана»
+    "target_lang": "ru",          # значение QComboBox «Язык перевода»
     "hotkey": "`",
     "ocr_engine": "auto",         # auto | tesseract | easyocr
 }
 
 # -----------------------------------------------------------------------------
-# 2. Локализация UI (i18n): встроенные словари + внешние JSON (можно добавлять свои)
+# 2. Локализация UI (i18n): встроенные словари + внешние JSON (можно дополнять)
 # -----------------------------------------------------------------------------
 
 BUILTIN_LOCALES = {
@@ -160,22 +170,28 @@ BUILTIN_LOCALES = {
         "dict.export.empty": "Словарь пуст — экспортировать нечего.",
         "settings.ui_lang": "Язык интерфейса приложения",
         "settings.theme": "Тема оформления",
-        "settings.theme.dark": "Luxury Dark",
-        "settings.theme.light": "Clean Light",
         "settings.source": "Язык экрана (OCR)",
         "settings.target": "Язык перевода",
         "settings.hotkey": "Горячая клавиша",
         "settings.engine": "OCR-движок",
-        "settings.hint": "Все изменения применяются сразу. Новые языки добавляются одной строкой в таблицах языков.",
+        "settings.hint": "Все изменения применяются сразу, без перезапуска. Новые языки добавляются одной строкой в языковых таблицах.",
         "tray.translate": "Перевести экран (~)",
         "tray.open": "Открыть окно",
         "tray.quit": "Выход",
         "popup.translating": "Перевод…",
+        "popup.busy": "Переводим слово…",
         "popup.empty": "Текст не распознан",
         "popup.dblclick": "(двойной клик — открыть главное окно)",
         "err.no_ocr": "OCR недоступен: установите Tesseract\n(https://github.com/UB-Mannheim/tesseract/wiki)\nили выполните: pip install pytesseract easyocr",
         "err.translate": "Ошибка перевода",
         "word.added": "Слово «{w}» → «{t}» добавлено в словарь",
+        "word.translated": "Перевод слова «{w}»:",
+        "word.btn.add": "Добавить в Словарь",
+        "word.btn.again": "Выбрать другое слово",
+        "word.in_dict": "Уже в словаре ✓",
+        "word.err": "Не удалось перевести слово «{w}»: {e}",
+        "word.empty_ocr": "OCR вернул пустой текст — выделите область с текстом плотнее.",
+        "settings.apply_ok": "Языки обновлены на лету: OCR={sl}, перевод={tl}",
         "msg.time": "Время выполнения",
     },
     "en": {
@@ -199,22 +215,28 @@ BUILTIN_LOCALES = {
         "dict.export.empty": "Dictionary is empty — nothing to export.",
         "settings.ui_lang": "App interface language",
         "settings.theme": "Color theme",
-        "settings.theme.dark": "Luxury Dark",
-        "settings.theme.light": "Clean Light",
         "settings.source": "Screen language (OCR)",
         "settings.target": "Translation language",
         "settings.hotkey": "Hotkey",
         "settings.engine": "OCR engine",
-        "settings.hint": "Changes apply instantly. New languages require just one table row.",
+        "settings.hint": "Changes apply instantly, no restart. New languages require just one table row.",
         "tray.translate": "Translate screen (~)",
         "tray.open": "Open window",
         "tray.quit": "Quit",
         "popup.translating": "Translating…",
+        "popup.busy": "Translating the word…",
         "popup.empty": "No text recognized",
         "popup.dblclick": "(double-click opens the main window)",
         "err.no_ocr": "OCR unavailable: install Tesseract\n(https://github.com/UB-Mannheim/tesseract/wiki)\nor run: pip install pytesseract easyocr",
         "err.translate": "Translation error",
         "word.added": "Word “{w}” → “{t}” added to dictionary",
+        "word.translated": "Translation of “{w}”:",
+        "word.btn.add": "Add to Dictionary",
+        "word.btn.again": "Pick another word",
+        "word.in_dict": "Already in dictionary ✓",
+        "word.err": "Failed to translate “{w}”: {e}",
+        "word.empty_ocr": "OCR returned empty text — select a tighter region with text.",
+        "settings.apply_ok": "Languages applied live: OCR={sl}, target={tl}",
         "msg.time": "Elapsed time",
     },
 }
@@ -274,8 +296,12 @@ QPushButton { background: #2a2a3d; color: #eaeaea; border: 1px solid #3a3a52;
               border-radius: 8px; padding: 8px 16px; }
 QPushButton:hover { background: #3a3a52; border-color: #e8c877; }
 QPushButton:pressed { background: #e8c877; color: #12121c; }
+QPushButton:disabled { color: #6a6a80; border-color: #2a2a3d; }
 QPushButton#primary { background: #e8c877; color: #12121c; font-weight: 700; border: none; }
 QPushButton#primary:hover { background: #f2d98f; }
+QPushButton#wordBtn { background: transparent; border: 1px dashed #4a4a66;
+                      border-radius: 6px; padding: 4px 10px; color: #cfd3ea; }
+QPushButton#wordBtn:hover { border-style: solid; border-color: #e8c877; color: #e8c877; }
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QTableWidget {
     background: #1b1b28; color: #eaeaea; border: 1px solid #2f2f45; border-radius: 8px; padding: 6px; }
 QComboBox::drop-down { border: none; width: 26px; }
@@ -291,6 +317,7 @@ QMenu::item:selected { background: #e8c877; color: #12121c; }
 QGroupBox { border: 1px solid #2f2f45; border-radius: 8px; margin-top: 14px; padding-top: 8px; }
 QGroupBox::title { subcontrol-origin: margin; left: 12px; color: #e8c877; }
 QLabel#accent { color: #e8c877; font-weight: 600; }
+QWidget#wordCard { background: #1b1b28; border: 1px solid #e8c877; border-radius: 10px; }
 """,
         "popup_bg": "#1b1b28", "popup_fg": "#eaeaea", "popup_accent": "#e8c877",
         "popup_border": "#e8c877",
@@ -308,8 +335,12 @@ QPushButton { background: #ffffff; color: #1e2430; border: 1px solid #d9dce6;
               border-radius: 8px; padding: 8px 16px; }
 QPushButton:hover { border-color: #2f6fed; color: #2f6fed; }
 QPushButton:pressed { background: #2f6fed; color: white; }
+QPushButton:disabled { color: #a6adbd; border-color: #e6e8f0; }
 QPushButton#primary { background: #2f6fed; color: white; font-weight: 700; border: none; }
 QPushButton#primary:hover { background: #4b83f2; }
+QPushButton#wordBtn { background: transparent; border: 1px dashed #b9c0d4;
+                      border-radius: 6px; padding: 4px 10px; color: #38415a; }
+QPushButton#wordBtn:hover { border-style: solid; border-color: #2f6fed; color: #2f6fed; }
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QTableWidget {
     background: white; color: #1e2430; border: 1px solid #d9dce6; border-radius: 8px; padding: 6px; }
 QComboBox QAbstractItemView { background: white; color: #1e2430;
@@ -321,6 +352,7 @@ QMenu::item:selected { background: #2f6fed; color: white; }
 QGroupBox { border: 1px solid #d9dce6; border-radius: 8px; margin-top: 14px; padding-top: 8px; background: white; }
 QGroupBox::title { subcontrol-origin: margin; left: 12px; color: #2f6fed; }
 QLabel#accent { color: #2f6fed; font-weight: 600; }
+QWidget#wordCard { background: #ffffff; border: 1px solid #2f6fed; border-radius: 10px; }
 """,
         "popup_bg": "#ffffff", "popup_fg": "#1e2430", "popup_accent": "#2f6fed",
         "popup_border": "#2f6fed",
@@ -407,7 +439,7 @@ class Database:
 
     # --- словарь ---
     def add_word(self, word: str, translation: str, sl: str, tl: str) -> bool:
-        """True — добавлено, False — уже было."""
+        """True — добавлено, False — уже было (UNIQUE по слову и языковой паре)."""
         with self._lock:
             cur = self._conn().execute(
                 "INSERT OR IGNORE INTO dictionary(word,translation,source_lang,target_lang)"
@@ -423,6 +455,13 @@ class Database:
             "SELECT word,translation,source_lang,target_lang,ts FROM dictionary"
             " ORDER BY id DESC").fetchall()
 
+    def has_word(self, word: str, sl: str, tl: str) -> bool:
+        """Есть ли слово в словаре для данной языковой пары (без учёта регистра)."""
+        row = self._conn().execute(
+            "SELECT 1 FROM dictionary WHERE word=? COLLATE NOCASE"
+            " AND source_lang=? AND target_lang=? LIMIT 1", (word, sl, tl)).fetchone()
+        return row is not None
+
     def delete_word(self, word: str, sl: str, tl: str):
         with self._lock:
             self._conn().execute("DELETE FROM dictionary WHERE word=? AND source_lang=? AND target_lang=?",
@@ -430,12 +469,12 @@ class Database:
             self._conn().commit()
 
     def export_quizlet_txt(self, path: str) -> int:
-        """Формат Quizlet: 'слово<TAB>перевод' на каждой строке."""
+        """Формат Quizlet: каждая строка — 'слово<TAB>перевод' (строго \\t)."""
         rows = self.list_words()
-        with open(path, "w", encoding="utf-8") as f:
-            for w, t, *_ in rows:
-                f.write(f"{w}\t{t}\n")
-        log.info("DB: Quizlet-экспорт %d пар -> %s", len(rows), path)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            for w, tr, *_ in rows:
+                f.write(f"{w}\t{tr}\n")
+        log.info("DB: Quizlet-экспорт %d пар -> %s (разделитель '\\t')", len(rows), path)
         return len(rows)
 
     def export_csv(self, path: str) -> int:
@@ -444,27 +483,28 @@ class Database:
             cw = csv.writer(f)
             cw.writerow(["word", "translation", "source_lang", "target_lang", "date"])
             cw.writerows(rows)
+        log.info("DB: CSV-экспорт %d пар -> %s", len(rows), path)
         return len(rows)
 
 
 # -----------------------------------------------------------------------------
-# 5. OCR: предобработка (Оцу), распознавание с ДИНАМИЧЕСКИМИ ISO-кодами, regex-очистка
+# 5. OCR: предобработка (порог Оцу), распознавание с ДИНАМИЧЕСКИМИ ISO-кодами,
+#    regex-очистка мусора
 # -----------------------------------------------------------------------------
 
 JUNK_CHARS = "~°|_/\\@#$%^&*+=<>{}[]«»…•·—–¬¦`"
 _JUNK_SET = set(JUNK_CHARS)
 
-LINE_SPLIT_RE = re.compile(r"\r?\n")                     # строки OCR-вывода
-HYPHEN_JOIN_RE = re.compile(r"(\w)-\s*\n\s*(\w)")      # перенос: transla-\ntion -> translation
-WS_RE = re.compile(r"[ \t]{2,}")                          # лишние пробелы
+LINE_SPLIT_RE = re.compile(r"\r?\n")                       # строки OCR-вывода
+HYPHEN_JOIN_RE = re.compile(r"(\w)-\s*\n\s*(\w)")          # перенос: transla-\ntion -> translation
+WS_RE = re.compile(r"[ \t]{2,}")                           # двойные/лишние пробелы
 LONE_JUNK_RE = re.compile(                                 # одиночные мусорные символы
     r"(?<!\w)[" + re.escape(JUNK_CHARS) + r"](?!(?:\w|" + re.escape(JUNK_CHARS) + r"))")
-TRAIL_LEAD_PUNCT_RE = re.compile(r"^\s*[^\w]+|(?![.!?…,;:])\s*[,](?=\s*$)")
-WORD_SPLIT_RE = re.compile(r"[^\W\d_]+(?:['’\-][^\W\d_]+)*", re.UNICODE)   # слова для клика-кнопок
+WORD_SPLIT_RE = re.compile(r"[^\W\d_]+(?:['’\-][^\W\d_]+)*", re.UNICODE)   # слова для кнопок
 
 
 def _strip_junk(s: str) -> str:
-    """Удаляет из строки мусорные символы, не «съедая» нормальную пунктуацию . , ! ? ' \" : -"""
+    """Удаляет мусорные символы, не «съедая» нормальную пунктуацию . , ! ? ' : -"""
     out, n = [], len(s)
     for i, ch in enumerate(s):
         if ch in _JUNK_SET:
@@ -473,7 +513,7 @@ def _strip_junk(s: str) -> str:
             if prev.isspace() and nxt.isspace():           # одинокий символ-обрубок
                 out.append(" ")
                 continue
-            if not prev.isalnum() and not prev.isspace():  # сломанная пунктуация вида "|." -> "."
+            if not prev.isalnum() and not prev.isspace():  # сломанная пунктуация "|." -> "."
                 continue
             if not nxt.isalnum() and not nxt.isspace():
                 continue
@@ -484,10 +524,11 @@ def _strip_junk(s: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    """Regex-зачистка OCR-мусора (| _ ~ ° @ и т.п.), склейка строк, чистка пробелов/пунктуации."""
+    """Regex-зачистка OCR-мусора (| _ ~ ° @), склейка разорванных слов, чистка
+    пробелов и оборванной пунктуации. Возвращает «чистую» одну строку."""
     if not text:
         return ""
-    t = HYPHEN_JOIN_RE.sub(r"\1\2", text)
+    t = HYPHEN_JOIN_RE.sub(r"\1\2", text)                  # склейка слов на стыке строк
     lines = []
     for ln in LINE_SPLIT_RE.split(t):
         stripped = ln.strip()
@@ -500,22 +541,27 @@ def clean_text(text: str) -> str:
             lines.append(ln)
     t = " ".join(lines)
     t = LONE_JUNK_RE.sub(" ", t)
-    t = re.sub(r"\s+([,.!?;:])", r"\1", t)                # "привет ." -> "привет."
+    t = re.sub(r"\s+([,.!?;:])", r"\1", t)                 # "привет ." -> "привет."
     t = re.sub(r"([,.!?;:])(?=\w)", r"\1 ", t)             # "привет,мир" -> "привет, мир"
-    t = re.sub(r"([.!?])[.!?;:,]+", r"\1", t)                            # "Quest! ." -> "Quest!"
-    t = TRAIL_LEAD_PUNCT_RE.sub("", t)
+    t = re.sub(r"([.!?])[.!?;:,]+", r"\1", t)              # "Quest! ." -> "Quest!"
+    t = re.sub(r"^[\s,.!?;:]+|[\s,.!?;:]+$", "", t)        # оборванные знаки по краям
     t = WS_RE.sub(" ", t).strip()
-    return re.sub(r"^[^A-Za-zА-Яа-яЁё\u4e00-\u9fff\u3040-\u30ff\d]+", "", t).strip()
+    # если после всей зачистки не осталось ни одного «печатного» символа языка — мусор
+    if not re.search(r"[A-Za-zА-Яа-яЁё\u4e00-\u9fff\u3040-\u30ff\d]", t):
+        return ""
+    return t
 
 
 def extract_words(text: str):
-    """Список «значимых» слов для кнопки-кликов (без цифр и мусора)."""
+    """Список «значимых» слов для кликабельных кнопок (без цифр и мусора)."""
     words = WORD_SPLIT_RE.findall(text or "")
     return [w for w in words if len(w) >= 2][:80]
 
 
 class OcrEngine:
-    """Единый вход для любого OCR: принимает ISO-код языка и сам маппит его на код движка."""
+    """Единая точка входа для любого OCR: принимает ISO-код языка из UI и сам
+    маппит его на коды движка (EasyOCR/Tesseract). Логика НЕ зависит от того,
+    какой язык выбран — только от таблиц OCR_LANGS."""
 
     def __init__(self):
         self._easy_reader = None
@@ -528,7 +574,7 @@ class OcrEngine:
             return "easyocr"
         return "tesseract" if HAS_PYTESSERACT else ("easyocr" if HAS_EASYOCR else "none")
 
-    # ---- предобработка: gray -> контраст -> бинаризация по порогу Оцу -> лёгкое шумоподавление
+    # ---- предобработка: gray -> контраст -> бинаризация по порогу Оцу -> шумоподавление
     @staticmethod
     def preprocess(img: "Image.Image") -> "Image.Image":
         g = ImageOps.grayscale(img)
@@ -555,10 +601,11 @@ class OcrEngine:
         return bw
 
     def recognize(self, img: "Image.Image", iso_lang: str, engine_cfg: str = "auto") -> tuple[str, str]:
+        """iso_lang — код из QComboBox «Язык экрана» ('auto','ru','en','zh','ja')."""
         engine = self.preferred_engine(engine_cfg if engine_cfg in ("auto", "tesseract", "easyocr") else "auto")
         if engine == "none":
             raise RuntimeError("OCR недоступен: не найден ни tesseract, ни easyocr")
-        cfg = OCR_LANGS.get(iso_lang, OCR_LANGS["auto"])
+        cfg = OCR_LANGS.get(iso_lang, OCR_LANGS["auto"])   # динамическая подстановка кодов
         pre = self.preprocess(img)
         t0 = time.perf_counter()
         if engine == "tesseract":
@@ -586,13 +633,15 @@ def np_array(img: "Image.Image"):
 OCR = OcrEngine()
 
 # -----------------------------------------------------------------------------
-# 6. Перевод (deep_translator, динамические ISO-коды) + QThread-воркеры
+# 6. Перевод (deep_translator, динамические ISO-коды) + асинхронные QThread-воркеры
 # -----------------------------------------------------------------------------
 
 _TRANSLATE_CACHE: dict = {}
 
+
 def translate_text(text: str, source_lang: str, target_lang: str) -> str:
-    """source_lang — ISO ('auto' тоже валиден) или None. Кэширует повторы (ускорение >2s нет)."""
+    """source_lang — ISO из QComboBox ('auto' тоже валиден) или None.
+    Повторы берутся из кэша мгновенно (гарантия <2s на вторичных запросах)."""
     if not text or not text.strip():
         return ""
     key = (text.strip().lower(), source_lang, target_lang)
@@ -610,14 +659,15 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> str:
 
 
 class TranslateWorker(QThread):
-    """Асинхронный пайплайн: скриншот -> предобработка -> OCR -> очистка -> перевод."""
+    """Асинхронный пайплайн: скриншот -> предобработка -> OCR -> очистка -> перевод.
+    Языки читаются из БД в момент старта, поэтому смена QComboBox в «Настройках»
+    применяется к следующему же захвату БЕЗ перезапуска приложения."""
     finished_ok = pyqtSignal(str, str, str, int)     # original, translated, engine, ms
     failed = pyqtSignal(str)
 
     def __init__(self, image: "Image.Image", parent=None):
         super().__init__(parent)
         self.image = image
-        self.settings = DB.load_settings()
 
     def run(self):
         t0 = time.perf_counter()
@@ -625,14 +675,14 @@ class TranslateWorker(QThread):
             if not OCR_AVAILABLE:
                 self.failed.emit("no_ocr")
                 return
+            s = DB.load_settings()                    # ДИНАМИЧЕСКИЕ коды на лету
             original, engine = OCR.recognize(
-                self.image, self.settings["source_lang"], self.settings.get("ocr_engine", "auto"))
+                self.image, s["source_lang"], s.get("ocr_engine", "auto"))
             log.info("Worker: OCR дал %.60s", original or "<пусто>")
             if not original:
                 self.finished_ok.emit("", "", engine, int((time.perf_counter() - t0) * 1000))
                 return
-            translated = translate_text(original, self.settings["source_lang"],
-                                        self.settings["target_lang"])
+            translated = translate_text(original, s["source_lang"], s["target_lang"])
             total_ms = int((time.perf_counter() - t0) * 1000)
             if total_ms > 2000:
                 log.warning("Worker: полный цикл %d мс превысил целевые 2000 мс", total_ms)
@@ -643,22 +693,28 @@ class TranslateWorker(QThread):
 
 
 class WordTranslateWorker(QThread):
-    """Быстрый перевод одного слова по клику из Истории."""
-    done = pyqtSignal(str, str)                      # word, translation
-    err = pyqtSignal(str, str)
+    """Мгновенный перевод ОДНОГО слова по клику из Истории (в фоне, UI не блокируется).
+    Язык перевода берётся из БД в момент запуска — смена «Языка перевода» в UI
+    действует сразу, без перезапуска."""
+    done = pyqtSignal(str, str, str)                 # word, translation, target_lang
+    err = pyqtSignal(str, str)                       # word, error
 
     def __init__(self, word: str, parent=None):
         super().__init__(parent)
         self.word = word
 
     def run(self):
-        s = DB.load_settings()
+        s = DB.load_settings()                        # ДИНАМИЧЕСКИЕ коды на лету
+        target = s.get("target_lang", "ru")
         try:
-            tr = translate_text(self.word, s["source_lang"] if s["source_lang"] != "auto" else "auto",
-                                s["target_lang"])
-            self.done.emit(self.word, tr)
+            # для одиночного слова источник всегда 'auto': исключаем ошибку
+            # направления, если язык экрана (OCR) не совпадает с языком записи
+            tr = translate_text(self.word, "auto", target)
+            self.done.emit(self.word, tr or "", target)
         except Exception as e:
+            log.exception("WordTranslateWorker: ошибка перевода '%s'", self.word)
             self.err.emit(self.word, str(e))
+
 
 # -----------------------------------------------------------------------------
 # 7. Захват экрана: оверлей выделения + попап перевода у курсора
@@ -772,7 +828,7 @@ class PopupWidget(QWidget):
         th = THEMES.get(DB.get_setting("theme", "dark"), THEMES["dark"])
         self._lbl_src.setStyleSheet(f"color:{th['popup_accent']}; background:transparent;")
         self._lbl_dst.setStyleSheet(f"color:{th['popup_fg']}; background:transparent;")
-        self._lbl_hint.setStyleSheet(f"color:#9a9ab0; background:transparent;")
+        self._lbl_hint.setStyleSheet("color:#9a9ab0; background:transparent;")
 
     def show_busy(self, cursor_pos: QPoint):
         self._lbl_src.setText("")
@@ -797,13 +853,14 @@ class PopupWidget(QWidget):
 
     def mouseDoubleClickEvent(self, _):
         self.hide()
-        app_main_window.showNormal()
-        app_main_window.activateWindow()
+        if app_main_window is not None:
+            app_main_window.showNormal()
+            app_main_window.activateWindow()
 
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        th = THEMES[DB.get_setting("theme", "dark")]
+        th = THEMES.get(DB.get_setting("theme", "dark"), THEMES["dark"])
         bg = QColor(th["popup_bg"])
         bg.setAlphaF(0.97)
         p.setPen(QPen(QColor(th["popup_border"]), 1.5))
@@ -912,13 +969,17 @@ class HotkeyManager:
 
 DB = Database()
 
+
 class ClickableWordButton(QPushButton):
+    """Кнопка-слово в деталях Истории: клик -> перевод только этого слова."""
+
     def __init__(self, word: str, i18n: I18n, on_click):
         super().__init__(word)
         self.word = word
+        self.setObjectName("wordBtn")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setFixedHeight(30)
-        self.clicked.connect(lambda: on_click(word))
+        self.clicked.connect(lambda _=False, w=word: on_click(w))
 
 
 class MainWindow(QMainWindow):
@@ -931,6 +992,7 @@ class MainWindow(QMainWindow):
         self.overlay: "SelectionOverlay | None" = None
         self.popup = PopupWidget(i18n)
         self._tray_actions = None          # заполняет main() после создания трея
+        self._hist_rows: list = []         # актуальные строки истории (id, ts, src, dst, ...)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_history_tab(), "")
@@ -940,7 +1002,7 @@ class MainWindow(QMainWindow):
         self.resize(980, 640)
         i18n.changed.connect(self.retranslate)
         self.apply_theme(self.settings.get("theme", "dark"))
-        self.retranslate()                # порядок важен: сначала тема, потом подписи (Qt полиморфизм)
+        self.retranslate()                # порядок важен: сначала тема, потом подписи
         self.refresh_history()
         self.refresh_dict()
 
@@ -1003,7 +1065,8 @@ class MainWindow(QMainWindow):
         self.tbl_dict.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         lay.addWidget(self.tbl_dict, 1)
         btns = QHBoxLayout()
-        self.btn_export = QPushButton(); self.btn_export.setObjectName("primary")
+        self.btn_export = QPushButton()          # «Экспорт для Quizlet» (.txt, \t)
+        self.btn_export.setObjectName("primary")
         self.btn_export_csv = QPushButton()
         self.btn_del_word = QPushButton()
         self.btn_export.clicked.connect(self._export_quizlet)
@@ -1021,7 +1084,6 @@ class MainWindow(QMainWindow):
         box = QGroupBox()
         bl = QVBoxLayout(box)
         form = QFormLayout()
-        bl.addLayout(form)
 
         self.lbl_s_ui = QLabel(); self.cb_ui = QComboBox()
         self.lbl_s_theme = QLabel(); self.cb_theme = QComboBox()
@@ -1035,10 +1097,12 @@ class MainWindow(QMainWindow):
             self.cb_ui.addItem(label, code)
         for key in ("dark", "light"):
             self.cb_theme.addItem(THEMES[key]["name"], key)
-        for code, cfg in OCR_LANGS.items():
-            self.cb_source.addItem(cfg["label"], code)
-        for code, label in TRANSLATE_LANGS.items():
-            self.cb_target.addItem(label, code)
+        # «Язык экрана (OCR)»: auto, ru, en, zh, ja — itemData хранит ISO-код
+        for code in OCR_LANG_ORDER:
+            self.cb_source.addItem(OCR_LANGS[code]["label"], code)
+        # «Язык перевода»: ru, en, es — itemData хранит ISO-код deep_translator
+        for code in TRANSLATE_LANG_ORDER:
+            self.cb_target.addItem(TRANSLATE_LANGS[code], code)
         self.cb_engine.addItems(["auto", "tesseract", "easyocr"])
         self.cb_engine.setCurrentText(self.settings.get("ocr_engine", "auto"))
 
@@ -1071,10 +1135,18 @@ class MainWindow(QMainWindow):
         self.settings[key] = str(val)
         log.info("Settings: '%s' := '%s'", key, val)
         if key == "ui_lang":
-            self.i18n.set_lang(val)
+            self.i18n.set_lang(val)                     # retranslate() вызовется по сигналу changed
         elif key == "theme":
             self.apply_theme(val)
         elif key in ("source_lang", "target_lang"):
+            # Языки применяются МГНОВЕННО: TranslateWorker и WordTranslateWorker
+            # читают настройки из БД при каждом запуске — никакого перезапуска не нужно.
+            log.info("Settings: языки обновлены на лету: OCR=%s, TARGET=%s",
+                     self.settings.get("source_lang"), self.settings.get("target_lang"))
+            self.statusBar().showMessage(
+                self.i18n.t("settings.apply_ok",
+                            sl=self.settings.get("source_lang", ""),
+                            tl=self.settings.get("target_lang", "")), 4000)
             if tray is not None:
                 tray.setToolTip(self.i18n.t("app.title"))
 
@@ -1091,15 +1163,17 @@ class MainWindow(QMainWindow):
         self.tabs.setTabText(0, t("tab.history"))
         self.tabs.setTabText(1, t("tab.dictionary"))
         self.tabs.setTabText(2, t("tab.settings"))
-        self.lst_history.setHorizontalHeaderLabels(["ID", t("dict.col.date"), t("history.original"), t("history.translation")])
-        self.tbl_dict.setHorizontalHeaderLabels([t("dict.col.word"), t("dict.col.translate"), t("dict.col.langs"), t("dict.col.date")])
+        self.lst_history.setHorizontalHeaderLabels(
+            ["ID", t("dict.col.date"), t("history.original"), t("history.translation")])
+        self.tbl_dict.setHorizontalHeaderLabels(
+            [t("dict.col.word"), t("dict.col.translate"), t("dict.col.langs"), t("dict.col.date")])
         self.btn_clear_hist.setText(t("history.btn.clear"))
         self.btn_export.setText(t("dict.btn.export"))
         self.btn_export_csv.setText(t("dict.btn.export_csv"))
         self.btn_del_word.setText(t("dict.btn.delete"))
         self.lbl_hist_src_title.setText(t("history.original")); self.lbl_hist_src_title.setObjectName("accent")
         self.lbl_hist_tr_title.setText(t("history.translation")); self.lbl_hist_tr_title.setObjectName("accent")
-        # подписи настроек (i18n без хардкода)
+        # подписи настроек (никакого хардкода — всё из i18n)
         self.lbl_s_ui.setText(t("settings.ui_lang"))
         self.lbl_s_theme.setText(t("settings.theme"))
         self.lbl_s_source.setText(t("settings.source"))
@@ -1114,66 +1188,153 @@ class MainWindow(QMainWindow):
 
     # ---------- история ----------
     def refresh_history(self):
-        rows = DB.list_history()
-        self.lst_history.setRowCount(len(rows))
-        for i, (hid, ts, src, dst, sl, tl, ms) in enumerate(rows):
+        keep_id = None
+        sel = self.lst_history.selectedItems()
+        if sel:
+            keep_id = sel[0].data(Qt.ItemDataRole.UserRole)
+        self._hist_rows = DB.list_history()
+        self.lst_history.setRowCount(len(self._hist_rows))
+        restore = -1
+        for i, (hid, ts, src, dst, sl, tl, ms) in enumerate(self._hist_rows):
             for j, val in enumerate((str(hid), ts, src or "", dst or "")):
                 it = QTableWidgetItem(val)
                 it.setData(Qt.ItemDataRole.UserRole, hid)
                 self.lst_history.setItem(i, j, it)
+            if hid == keep_id:
+                restore = i
         hdr = self.lst_history.horizontalHeader()
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.lst_history.setColumnHidden(0, True)
+        if restore >= 0:
+            self.lst_history.selectRow(restore)
+        elif self._hist_rows:
+            self.lst_history.selectRow(0)
 
     def _current_history_row(self):
         items = self.lst_history.selectedItems()
         if not items:
             return None
-        r = items[0].row()
-        return (self.lst_history.item(r, 2).text(), self.lst_history.item(r, 3).text())
+        hid = items[0].data(Qt.ItemDataRole.UserRole)
+        for row in self._hist_rows:
+            if row[0] == hid:
+                return row                       # (id, ts, src, dst, sl, tl, ms)
+        return None
 
     def _on_history_selected(self):
+        """Выбор записи -> оригинал разбивается на кликабельные кнопки-слова."""
+        self._clear_words_layout()
         row = self._current_history_row()
-        # чистим контейнер слов
-        while self.words_layout.count():
-            it = self.words_layout.takeAt(0)
-            if it.widget():
-                it.widget().deleteLater()
         if not row:
             self.txt_hist_tr.clear()
+            hint = QLabel(self.i18n.t("history.empty"))
+            hint.setWordWrap(True)
+            self.words_layout.addWidget(hint)
+            self.words_layout.addStretch()
             return
-        src, dst = row
+        src, dst = row[2] or "", row[3] or ""
         self.txt_hist_tr.setPlainText(dst)
         words = extract_words(src)
+        if not words:                            # оригинал пуст/без слов
+            hint = QLabel(self.i18n.t("word.empty_ocr"))
+            hint.setWordWrap(True)
+            self.words_layout.addWidget(hint)
+            self.words_layout.addStretch()
+            return
         chunk = QWidget()
-        cl = QVBoxLayout(chunk); cl.setContentsMargins(4, 4, 4, 4); cl.setSpacing(6)
+        cl = QVBoxLayout(chunk)
+        cl.setContentsMargins(4, 4, 4, 4)
+        cl.setSpacing(6)
         line = None
         for wd in words:
             if line is None or line.count() >= 12:
-                line = QHBoxLayout(); line.setSpacing(6); line.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                line = QHBoxLayout()
+                line.setSpacing(6)
+                line.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 cl.addLayout(line)
             line.addWidget(ClickableWordButton(wd, self.i18n, self._on_word_clicked))
         self.words_layout.addWidget(chunk)
         self.words_layout.addStretch()
 
+    def _clear_words_layout(self):
+        """Полностью чистим блок деталей: и виджеты, и вложенные layout'ы строк слов.
+        takeAt() возвращает QLayoutItem; у stretch-элементов widget() == None."""
+        def _drain(layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    w.setParent(None)            # немедленное изъятие из дерева виджетов
+                    w.deleteLater()
+                    continue
+                sub = item.layout()
+                if sub is not None:              # вложенный QHBoxLayout со словами
+                    _drain(sub)
+                    while sub.count():           # страховка: оставшиеся пустые элементы (stretch)
+                        sub.takeAt(0)
+                    sub.deleteLater()
+        _drain(self.words_layout)
+
     def _on_word_clicked(self, word: str):
+        """Клик по слову в деталях Истории: мгновенный фоновый перевод ТОЛЬКО этого слова."""
         log.info("History: клик по слову '%s' -> запрос перевода слова", word)
+        self._clear_words_layout()
+        card = QWidget(); card.setObjectName("wordCard")
+        cl = QVBoxLayout(card); cl.setContentsMargins(12, 10, 12, 10); cl.setSpacing(8)
+        lbl_busy = QLabel(f"<b>{word}</b> — {self.i18n.t('popup.busy')}…")
+        lbl_busy.setTextFormat(Qt.TextFormat.RichText)
+        cl.addWidget(lbl_busy)
+        self.words_layout.addWidget(card)
+        self.words_layout.addStretch()
         wb = WordTranslateWorker(word, self)
-        wb.done.connect(lambda w, tr: self._word_done(w, tr))
-        wb.err.connect(lambda w, e: QMessageBox.warning(self, self.i18n.t("err.translate"), f"{w}: {e}"))
+        wb.done.connect(self._word_done)
+        wb.err.connect(self._word_error)
+        wb.finished.connect(lambda w=wb: self.word_workers.remove(w) if w in self.word_workers else None)
         wb.start()
         self.word_workers.append(wb)
 
-    def _word_done(self, word: str, translation: str):
-        if not translation:
-            return
-        s = DB.load_settings()                                # актуальные языки на момент завершения
-        self.settings.update(s)
-        added = DB.add_word(word, translation, s.get("source_lang", "auto"), s.get("target_lang", "ru"))
+    def _word_done(self, word: str, translation: str, target_lang: str):
+        """Перевод слова готов -> карточка «Оригинал → Перевод» с кнопкой «Добавить в Словарь»."""
+        log.info("WordFlow: слово '%s' -> '%s' (target=%s)", word, translation, target_lang)
+        self._clear_words_layout()
+        s = DB.load_settings(); self.settings.update(s)
+        src_lang = s.get("source_lang", "auto")
+        already = bool(translation) and DB.has_word(word, src_lang, target_lang)
+        card = QWidget(); card.setObjectName("wordCard")
+        cl = QVBoxLayout(card); cl.setContentsMargins(12, 10, 12, 10); cl.setSpacing(8)
+        head = QLabel(self.i18n.t("word.translated", w=word)); head.setObjectName("accent")
+        body = QLabel(f"<b>{word}</b> &nbsp;→&nbsp; <b>{translation or '—'}</b>")
+        body.setTextFormat(Qt.TextFormat.RichText); body.setWordWrap(True)
+        cl.addWidget(head); cl.addWidget(body)
+        row = QHBoxLayout()
+        btn_add = QPushButton(self.i18n.t("word.in_dict") if already
+                              else self.i18n.t("word.btn.add"))
+        btn_add.setObjectName("primary")
+        btn_add.setEnabled(not already)
+        btn_add.clicked.connect(lambda _=False, w=word, tr=translation:
+                                self._add_word_to_dict(w, tr))
+        btn_again = QPushButton(self.i18n.t("word.btn.again"))
+        btn_again.clicked.connect(self._on_history_selected)   # вернуться к списку слов
+        row.addWidget(btn_add); row.addWidget(btn_again); row.addStretch()
+        cl.addLayout(row)
+        self.words_layout.addWidget(card)
+        self.words_layout.addStretch()
+
+    def _word_error(self, word: str, err: str):
+        log.error("WordFlow: ошибка перевода '%s': %s", word, err)
+        self._on_history_selected()                            # восстановить список слов
+        QMessageBox.warning(self, self.i18n.t("err.translate"),
+                            self.i18n.t("word.err", w=word, e=err))
+
+    def _add_word_to_dict(self, word: str, translation: str):
+        s = DB.load_settings(); self.settings.update(s)
+        src_lang = s.get("source_lang", "auto")
+        added = DB.add_word(word, translation, src_lang, s.get("target_lang", "ru"))
         self.refresh_dict()
         self.statusBar().showMessage(self.i18n.t("word.added", w=word, t=translation), 5000)
-        log.info("WordFlow: '%s'->'%s' added=%s", word, translation, added)
+        log.info("WordFlow: '%s'->'%s' добавлено в словарь=%s", word, translation, added)
+        # обновим карточку: кнопка станет неактивной («Уже в словаре ✓»)
+        self._word_done(word, translation, s.get("target_lang", "ru"))
 
     def _clear_history(self):
         DB.clear_history()
@@ -1191,15 +1352,22 @@ class MainWindow(QMainWindow):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
     def _export_quizlet(self):
+        """Сохраняет .txt: каждая строка 'слово\\tперевод' — формат импорта Quizlet."""
         if not DB.list_words():
             QMessageBox.information(self, self.i18n.t("dict.btn.export"), self.i18n.t("dict.export.empty"))
             return
         path, _ = QFileDialog.getSaveFileName(self, self.i18n.t("dict.btn.export"),
                                               str(Path.home() / "quizlet.txt"), "Text (*.txt)")
         if path:
-            n = DB.export_quizlet_txt(path)
-            QMessageBox.information(self, self.i18n.t("dict.btn.export"),
-                                    self.i18n.t("dict.export.ok", path=path, n=n))
+            if not path.lower().endswith(".txt"):
+                path += ".txt"
+            try:
+                n = DB.export_quizlet_txt(path)
+                QMessageBox.information(self, self.i18n.t("dict.btn.export"),
+                                        self.i18n.t("dict.export.ok", path=path, n=n))
+            except Exception as e:
+                log.exception("Export: ошибка записи Quizlet-файла")
+                QMessageBox.critical(self, self.i18n.t("dict.btn.export"), str(e))
 
     def _export_csv(self):
         path, _ = QFileDialog.getSaveFileName(self, self.i18n.t("dict.btn.export_csv"),
@@ -1216,7 +1384,8 @@ class MainWindow(QMainWindow):
         r = items[0].row()
         wd = self.tbl_dict.item(r, 0).text()
         langs = self.tbl_dict.item(r, 2).text().split("→")
-        DB.delete_word(wd, langs[0].strip(), langs[1].strip())
+        if len(langs) == 2:
+            DB.delete_word(wd, langs[0].strip(), langs[1].strip())
         self.refresh_dict()
 
     # ---------- основной сценарий: хоткей -> оверлей -> worker -> попап ----------
@@ -1254,6 +1423,9 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def _on_done(self, original: str, translated: str, pos: QPoint, ms: int):
+        if not original and not translated:
+            self.statusBar().showMessage(self.i18n.t("word.empty_ocr"), 5000)
+            log.warning("Capture: OCR вернул пустой текст")
         s = DB.load_settings()                                # актуальные языки на момент завершения
         self.settings.update(s)
         if original:
@@ -1282,8 +1454,8 @@ class MainWindow(QMainWindow):
 # 10. Трей + сборка приложения
 # -----------------------------------------------------------------------------
 
-tray: QSystemTrayIcon | None = None
-app_main_window: MainWindow | None = None
+tray: "QSystemTrayIcon | None" = None
+app_main_window: "MainWindow | None" = None
 
 
 def make_tray_icon() -> QIcon:
@@ -1313,7 +1485,7 @@ def main():
              sys.version.split()[0],
              "+".join([e for e, ok in (("tesseract", HAS_PYTESSERACT), ("easyocr", HAS_EASYOCR)) if ok] or ["none"]))
 
-    # выгружаем эталонные locales наружу (пользователь может редактировать/дополнять без правки кода)
+    # выгружаем эталонные locales наружу (можно редактировать/дополнять без правки кода)
     LOCALES_DIR.mkdir(exist_ok=True)
     for code, data in BUILTIN_LOCALES.items():
         f = LOCALES_DIR / f"{code}.json"
@@ -1325,8 +1497,17 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setApplicationName("YolochkaPlus")
 
     settings = DB.load_settings()
+    # валидация сохранённых языков: если в БД оказался неизвестный код — откат к дефолту
+    if settings.get("source_lang") not in OCR_LANGS:
+        settings["source_lang"] = DEFAULT_SETTINGS["source_lang"]
+        DB.set_setting("source_lang", settings["source_lang"])
+    if settings.get("target_lang") not in TRANSLATE_LANGS:
+        settings["target_lang"] = DEFAULT_SETTINGS["target_lang"]
+        DB.set_setting("target_lang", settings["target_lang"])
+
     i18n = I18n(settings.get("ui_lang", "ru"))
 
     win = MainWindow(i18n)
@@ -1349,7 +1530,7 @@ def main():
                            if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
     tray.show()
 
-    hk = HotkeyManager(win.start_capture)
+    hk = HotkeyManager(win.start_capture)          # noqa: F841 (хук живёт всё время работы)
     log.info("=== Приложение готово к работе ===")
     sys.exit(app.exec())
 
