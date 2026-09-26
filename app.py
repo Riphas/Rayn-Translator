@@ -5,8 +5,10 @@
 
 Возможности:
   * Горячая клавиша "~" (тильда) -> затемнённый оверлей выделения области экрана.
+    Оверлей и захват корректно работают на мониторах Windows с High-DPI
+    масштабированием 125% / 150% (логические/физические координаты, PassThrough).
   * OCR выбранной области (pytesseract / EasyOCR). Языки НЕ зашиты в логику:
-    QComboBox "Язык экрана" (auto, ru, en, zh, ja) и "Язык перевода" (ru, en, es)
+    QComboBox "Язык экрана (OCR)" (auto, en, zh, ja) и "Язык перевода" (ru, en, es)
     из вкладки "Настройки" подставляют ISO-коды в движки на лету, без перезапуска.
   * Асинхронный перевод через deep_translator (GoogleTranslator) в QThread;
     попап с переводом появляется у курсора мыши (целевое время < 2 секунд).
@@ -37,7 +39,31 @@ import threading
 from pathlib import Path
 
 # -----------------------------------------------------------------------------
-# 0. Пути, логирование, ранние проверки зависимостей
+# 0. High-DPI: объявляем приложение DPI-aware ДО создания QApplication.
+#    На Windows 11 с масштабированием 125% / 150% это гарантирует, что Qt и
+#    Win32-хук работают в согласованной системе координат (физические пиксели
+#    экрана <-> логические координаты виджетов пересчитываются через devicePixelRatio).
+# -----------------------------------------------------------------------------
+
+def set_process_dpi_aware() -> None:
+    """SetProcessDpiAwarenessContext(PER_MONITOR_V2); безопасный no-op вне Windows."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        # Per-Monitor v2 контекст (Win10 1703+ / Win11)
+        ctx = ctypes.c_void_p(-4)
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctx):
+            return
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)      # fallback: PROCESS_PER_MONITOR_DPI_AWARE
+    except Exception as e:
+        logging.getLogger("yolochka").warning("DPI: не удалось включить DPI-awareness: %s", e)
+
+
+set_process_dpi_aware()
+
+# -----------------------------------------------------------------------------
+# 0b. Пути, логирование, ранние проверки зависимостей
 # -----------------------------------------------------------------------------
 
 def app_dir() -> Path:
@@ -68,7 +94,7 @@ try:
     from PyQt6.QtCore import Qt, QThread, QTimer, QPoint, QRect, pyqtSignal, QObject
     from PyQt6.QtGui import (
         QAction, QColor, QCursor, QFont, QIcon, QImage, QPainter, QPen,
-        QPixmap, QGuiApplication,
+        QPixmap, QGuiApplication, QScreen,
     )
     from PyQt6.QtWidgets import (
         QApplication, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -117,14 +143,14 @@ UI_LANGS = {                      # локализация интерфейса
     "en": "English",
 }
 
-# QComboBox «Язык экрана (OCR)»: auto, ru, en, zh, ja — ПОРЯДОК элементов списка
-OCR_LANG_ORDER = ["auto", "ru", "en", "zh", "ja"]
+# QComboBox «Язык экрана (OCR)»: auto, en, zh, ja — ПОРЯДОК элементов списка.
+# Новый язык = одна строка здесь; логика OCR/перевода не меняется.
+OCR_LANG_ORDER = ["auto", "en", "zh", "ja"]
 OCR_LANGS = {                     # ISO-код -> подписи в UI + коды движков OCR
-    "auto": {"label": "Автоопределение", "tess": "eng+rus",      "easy": ["en", "ru"]},
-    "ru":   {"label": "Русский",         "tess": "rus",          "easy": ["ru"]},
-    "en":   {"label": "Английский",      "tess": "eng",          "easy": ["en"]},
-    "zh":   {"label": "Китайский",       "tess": "chi_sim",      "easy": ["ch_sim"]},
-    "ja":   {"label": "Японский",        "tess": "jpn",          "easy": ["ja"]},
+    "auto": {"label": "Автоопределение", "tess": "eng+chi_sim+jpn", "easy": ["en", "ch_sim", "ja"]},
+    "en":   {"label": "Английский",      "tess": "eng",             "easy": ["en"]},
+    "zh":   {"label": "Китайский",       "tess": "chi_sim",         "easy": ["ch_sim"]},
+    "ja":   {"label": "Японский",        "tess": "jpn",             "easy": ["ja"]},
 }
 
 # QComboBox «Язык перевода»: ru, en, es — значения = ISO-коды deep_translator
@@ -601,7 +627,7 @@ class OcrEngine:
         return bw
 
     def recognize(self, img: "Image.Image", iso_lang: str, engine_cfg: str = "auto") -> tuple[str, str]:
-        """iso_lang — код из QComboBox «Язык экрана» ('auto','ru','en','zh','ja')."""
+        """iso_lang — код из QComboBox «Язык экрана (OCR)» ('auto','en','zh','ja')."""
         engine = self.preferred_engine(engine_cfg if engine_cfg in ("auto", "tesseract", "easyocr") else "auto")
         if engine == "none":
             raise RuntimeError("OCR недоступен: не найден ни tesseract, ни easyocr")
@@ -650,7 +676,14 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> str:
         return _TRANSLATE_CACHE[key]
     t0 = time.perf_counter()
     src = None if source_lang in ("auto", "", None) else source_lang
-    res = GoogleTranslator(source=src or "auto", target=target_lang).translate(text)
+    try:
+        # request_params добавляет timeout: при обрыве сети получаем исключение
+        # сразу, а не зависший поток; вызывающий код ловит его через try/except.
+        res = GoogleTranslator(source=src or "auto", target=target_lang,
+                               request_params={"timeout": 5}).translate(text)
+    except Exception as e:
+        log.error("translate: СБОЙ [%s->%s] '%.40s': %s", source_lang, target_lang, text, e)
+        raise                                   # воркеры перехватят и покажут ошибку в UI
     ms = int((time.perf_counter() - t0) * 1000)
     flag = " [SLOW >2s!]" if ms > 2000 else ""
     log.info("translate: '%.40s…' [%s->%s] %d мс%s", text, source_lang, target_lang, ms, flag)
@@ -660,14 +693,18 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> str:
 
 class TranslateWorker(QThread):
     """Асинхронный пайплайн: скриншот -> предобработка -> OCR -> очистка -> перевод.
-    Языки читаются из БД в момент старта, поэтому смена QComboBox в «Настройках»
-    применяется к следующему же захвату БЕЗ перезапуска приложения."""
+
+    Языковые коды передаются ЯВНО (снимок настроек из GUI-потока), поэтому смена
+    QComboBox в «Настройках» применяется к следующему же захвату БЕЗ перезапуска.
+    Каждый этап обёрнут в try/except с записью в app.log — обрыв сети или ошибка
+    API не роняют приложение."""
     finished_ok = pyqtSignal(str, str, str, int)     # original, translated, engine, ms
     failed = pyqtSignal(str)
 
-    def __init__(self, image: "Image.Image", parent=None):
+    def __init__(self, image: "Image.Image", settings: dict, parent=None):
         super().__init__(parent)
         self.image = image
+        self.settings = dict(settings)               # снимок настроек из GUI-потока (без гонок)
 
     def run(self):
         t0 = time.perf_counter()
@@ -675,37 +712,54 @@ class TranslateWorker(QThread):
             if not OCR_AVAILABLE:
                 self.failed.emit("no_ocr")
                 return
-            s = DB.load_settings()                    # ДИНАМИЧЕСКИЕ коды на лету
-            original, engine = OCR.recognize(
-                self.image, s["source_lang"], s.get("ocr_engine", "auto"))
+            s = self.settings                         # ДИНАМИЧЕСКИЕ ISO-коды из UI на момент старта
+            log.info("Worker: старт пайплайна (OCR=%s -> TARGET=%s)",
+                     s.get("source_lang"), s.get("target_lang"))
+            try:
+                original, engine = OCR.recognize(
+                    self.image, s["source_lang"], s.get("ocr_engine", "auto"))
+            except Exception:
+                log.exception("Worker: ошибка OCR-этапа")
+                raise
             log.info("Worker: OCR дал %.60s", original or "<пусто>")
             if not original:
                 self.finished_ok.emit("", "", engine, int((time.perf_counter() - t0) * 1000))
                 return
-            translated = translate_text(original, s["source_lang"], s["target_lang"])
+            try:
+                translated = translate_text(original, s["source_lang"], s["target_lang"])
+            except Exception:
+                log.exception("Worker: ошибка перевода (обрыв сети / API?)")
+                raise
             total_ms = int((time.perf_counter() - t0) * 1000)
             if total_ms > 2000:
                 log.warning("Worker: полный цикл %d мс превысил целевые 2000 мс", total_ms)
+            else:
+                log.info("Worker: цикл уложился в цель — %d мс", total_ms)
             self.finished_ok.emit(original, translated, engine, total_ms)
         except Exception as e:
-            log.exception("Worker: ошибка пайплайна")
-            self.failed.emit(str(e))
+            log.exception("Worker: необработанная ошибка пайплайна")
+            try:
+                self.failed.emit(str(e))              # сигнал вместо вылета фонового потока
+            except Exception:
+                log.exception("Worker: не удалось отправить failed")
 
 
 class WordTranslateWorker(QThread):
     """Мгновенный перевод ОДНОГО слова по клику из Истории (в фоне, UI не блокируется).
-    Язык перевода берётся из БД в момент запуска — смена «Языка перевода» в UI
-    действует сразу, без перезапуска."""
+
+    Язык перевода передаётся ЯВНО (snapshot из QComboBox на момент клика) — смена
+    «Языка перевода» в настройках действует сразу, без перезапуска; ошибки сети
+    пишутся в app.log и показываются карточкой, а не вылетом."""
     done = pyqtSignal(str, str, str)                 # word, translation, target_lang
     err = pyqtSignal(str, str)                       # word, error
 
-    def __init__(self, word: str, parent=None):
+    def __init__(self, word: str, target_lang: str, parent=None):
         super().__init__(parent)
         self.word = word
+        self.target_lang = target_lang               # ISO из QComboBox на момент клика
 
     def run(self):
-        s = DB.load_settings()                        # ДИНАМИЧЕСКИЕ коды на лету
-        target = s.get("target_lang", "ru")
+        target = self.target_lang                     # ДИНАМИЧЕСКИЙ код из UI, без перезапуска
         try:
             # для одиночного слова источник всегда 'auto': исключаем ошибку
             # направления, если язык экрана (OCR) не совпадает с языком записи
@@ -721,16 +775,22 @@ class WordTranslateWorker(QThread):
 # -----------------------------------------------------------------------------
 
 def grab_region(rect: QRect) -> "Image.Image":
-    """Захват области экрана с учётом DPI (координаты оверлея — логические)."""
-    screen = QGuiApplication.primaryScreen()
-    dpr = screen.devicePixelRatio()
-    pm = screen.grabWindow(0, round(rect.x() * dpr), round(rect.y() * dpr),
-                           round(rect.width() * dpr), round(rect.height() * dpr))
-    if dpr != 1.0:
-        pm.setDevicePixelRatio(1.0)                       # дальше работаем в пикселях pixmap
+    """Захват области экрана с корректным пересчётом DPI (125% / 150%).
+
+    Координаты оверлея — ЛОГИЧЕСКИЕ (системные единицы Qt). grabWindow() в PyQt6
+    принимает координаты в логических единицах, а возвращает pixmap в ФИЗИЧЕСКИХ
+    пикселях; devicePixelRatio pixmap'а сообщает это отношение. Дальнейшая
+    обработка идёт в физических пикселях — именно так OCR получает резкий текст
+    на масштабируемых мониторах Windows.
+    """
+    scr = screen_at(rect)
+    pm = scr.grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
+    dpr = pm.devicePixelRatio() or scr.devicePixelRatio() or 1.0
     qimg = pm.toImage().convertToFormat(QImage.Format.Format_RGB888)
     w, h, bpl = qimg.width(), qimg.height(), qimg.bytesPerLine()
-    buf = bytes(qimg.constBits()[: bpl * h]) if hasattr(qimg.constBits(), "__getitem__") else bytes(qimg.constBits())
+    ptr = qimg.constBits()
+    buf = bytes(ptr[: bpl * h]) if hasattr(ptr, "__getitem__") else bytes(ptr)
+    log.info("Capture: лог. область %s -> физич. %dx%d (DPR=%.2f)", rect, w, h, dpr)
     if bpl == w * 3:
         return Image.frombytes("RGB", (w, h), buf[: w * h * 3])
     img = Image.new("RGB", (w, h))                        # stride != ширина — копируем построчно
@@ -751,11 +811,16 @@ class SelectionOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
         self._start = self._cur = None
-        screen = QGuiApplication.primaryScreen()
+        # Оверлей покрывает ВСЕ экраны виртуального стола (корректно для
+        # мультимониторных конфигураций Windows с разным DPI 125%/150%).
+        virtual = QRect()
+        for s in QGuiApplication.screens():
+            virtual = virtual.united(s.geometry())
+        screen = screen_at(QCursor.pos())
         self._bg = screen.grabWindow(0)          # чистый экран захватываем ДО затемнения
-        self._bg.setDevicePixelRatio(1.0)
-        self.setGeometry(screen.geometry())
-        log.info("Overlay: открыт на %dx%d", self._bg.width(), self._bg.height())
+        self._bg.setDevicePixelRatio(1.0)        # рисуем pixmap на всю логическую ширину
+        self.setGeometry(virtual)
+        log.info("Overlay: геометрия %s, DPR экрана курсора=%.2f", virtual, screen.devicePixelRatio())
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -795,6 +860,19 @@ class SelectionOverlay(QWidget):
         if e.key() == Qt.Key.Key_Escape:
             self.hide()
             self.cancelled.emit()
+
+
+def screen_at(rect_or_point) -> "QScreen":
+    """Экран, которому принадлежит прямоугольник/точка (учёт мультимониторности)."""
+    screens = QGuiApplication.screens()
+    if isinstance(rect_or_point, QRect):
+        target = rect_or_point.center()
+    else:
+        target = rect_or_point
+    for s in screens:
+        if s.geometry().contains(target):
+            return s
+    return QGuiApplication.primaryScreen()
 
 
 class PopupWidget(QWidget):
@@ -842,7 +920,8 @@ class PopupWidget(QWidget):
 
     def _show_at(self, pos: QPoint):
         self.adjustSize()
-        scr = QGuiApplication.primaryScreen().availableGeometry()
+        # попап держим в границах того экрана, где находится курсор (High-DPI/мультимонитор)
+        scr = screen_at(pos).availableGeometry()
         x = max(scr.left(), min(pos.x() + 16, scr.right() - self.width() - 4))
         y = max(scr.top(), min(pos.y() + 16, scr.bottom() - self.height() - 4))
         self._apply_label_styles()
@@ -1139,10 +1218,14 @@ class MainWindow(QMainWindow):
         elif key == "theme":
             self.apply_theme(val)
         elif key in ("source_lang", "target_lang"):
-            # Языки применяются МГНОВЕННО: TranslateWorker и WordTranslateWorker
-            # читают настройки из БД при каждом запуске — никакого перезапуска не нужно.
-            log.info("Settings: языки обновлены на лету: OCR=%s, TARGET=%s",
-                     self.settings.get("source_lang"), self.settings.get("target_lang"))
+            # Языки применяются МГНОВЕННО: каждый TranslateWorker/WordTranslateWorker
+            # получает снимок настроек при старте — никакого перезапуска не нужно.
+            tess = OCR_LANGS.get(self.settings.get("source_lang", ""), {}).get("tess", "?")
+            easy = "+".join(OCR_LANGS.get(self.settings.get("source_lang", ""), {}).get("easy", []))
+            log.info("Settings: языки обновлены на лету: OCR=%s (tesseract:'%s', easyocr:'%s'), "
+                     "TARGET=%s (deep_translator)",
+                     self.settings.get("source_lang"), tess, easy,
+                     self.settings.get("target_lang"))
             self.statusBar().showMessage(
                 self.i18n.t("settings.apply_ok",
                             sl=self.settings.get("source_lang", ""),
@@ -1278,6 +1361,9 @@ class MainWindow(QMainWindow):
     def _on_word_clicked(self, word: str):
         """Клик по слову в деталях Истории: мгновенный фоновый перевод ТОЛЬКО этого слова."""
         log.info("History: клик по слову '%s' -> запрос перевода слова", word)
+        # дебаунс: пока идёт запрос, игнорируем клики по остальным словам
+        if any(w.isRunning() for w in self.word_workers):
+            return
         self._clear_words_layout()
         card = QWidget(); card.setObjectName("wordCard")
         cl = QVBoxLayout(card); cl.setContentsMargins(12, 10, 12, 10); cl.setSpacing(8)
@@ -1286,7 +1372,8 @@ class MainWindow(QMainWindow):
         cl.addWidget(lbl_busy)
         self.words_layout.addWidget(card)
         self.words_layout.addStretch()
-        wb = WordTranslateWorker(word, self)
+        target_now = DB.get_setting("target_lang", "ru")     # актуальный ISO из QComboBox
+        wb = WordTranslateWorker(word, target_now, self)
         wb.done.connect(self._word_done)
         wb.err.connect(self._word_error)
         wb.finished.connect(lambda w=wb: self.word_workers.remove(w) if w in self.word_workers else None)
@@ -1417,7 +1504,11 @@ class MainWindow(QMainWindow):
         self.popup.show_busy(pos)
         if self.worker and self.worker.isRunning():          # не допускаем параллельных OCR-циклов
             self.worker.wait(1500)
-        self.worker = TranslateWorker(img, self)
+        s = DB.load_settings()                               # снимок языков из UI (GUI-поток)
+        self.settings.update(s)
+        log.info("Capture: язык экрана=%s -> язык перевода=%s (из QComboBox)",
+                 s.get("source_lang"), s.get("target_lang"))
+        self.worker = TranslateWorker(img, s, self)
         self.worker.finished_ok.connect(lambda o, d, eng, ms: self._on_done(o, d, pos, ms))
         self.worker.failed.connect(self._on_fail)
         self.worker.start()
