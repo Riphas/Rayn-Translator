@@ -1,0 +1,7 @@
+PyQt6>=6.5
+deep-translator>=1.11
+easyocr>=1.7
+opencv-python-headless>=4.8
+pytesseract>=0.3.10
+Pillow>=10.0
+pyinstaller>=6.0

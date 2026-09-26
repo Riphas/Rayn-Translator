@@ -1,0 +1,75 @@
+{
+    "app_name": "Yolochka Plus",
+    "tray": {
+        "tooltip": "Yolochka Plus — screen translator",
+        "capture": "Translate from screen (~)",
+        "history": "History",
+        "dictionary": "Dictionary",
+        "settings": "Settings",
+        "quit": "Exit"
+    },
+    "tabs": {
+        "history": "History",
+        "dictionary": "Dictionary",
+        "settings": "Settings"
+    },
+    "history": {
+        "title": "Recognition & translation history",
+        "original": "Original",
+        "translated": "Translation",
+        "source_lang": "Source",
+        "target_lang": "Target",
+        "datetime": "Date / Time",
+        "search_placeholder": "Filter by text...",
+        "add_to_dict": "Add to dictionary",
+        "delete": "Delete selected",
+        "clear": "Clear all",
+        "empty": "History is empty. Press ~ to translate text on screen.",
+        "status_bar": "Records: {count}"
+    },
+    "dictionary": {
+        "title": "Vocabulary",
+        "word": "Word (original)",
+        "translation": "Translation",
+        "lang_pair": "Language pair",
+        "added": "Added",
+        "delete": "Delete selected",
+        "export_quizlet": "Export for Quizlet (.txt)",
+        "export_csv": "Export as CSV",
+        "export_done": "Exported {count} pairs to",
+        "export_empty": "Dictionary is empty — nothing to export.",
+        "empty": "No saved words yet. Click any word in the History tab to add it here."
+    },
+    "settings": {
+        "title": "Settings",
+        "ui_language": "Application UI language",
+        "source_lang": "Screen language (OCR source)",
+        "target_lang": "Translation language",
+        "hotkey": "Global hotkey",
+        "ocr_engine": "OCR engine",
+        "theme": "Theme",
+        "theme_dark": "Luxury Dark",
+        "theme_light": "Clean Light",
+        "popup_delay": "Popup auto-hide delay, ms",
+        "db_path": "Database path",
+        "save": "Save",
+        "saved": "Settings saved. New languages apply to the next capture immediately.",
+        "auto_detect": "Auto-detect"
+    },
+    "popup": {
+        "translating": "Translating…",
+        "copy": "Copy",
+        "add_word": "Add word",
+        "close": "Close",
+        "error_no_text": "No text recognized in the selection.",
+        "error_translate": "Translation error: {error}",
+        "time_ms": "{ms} ms"
+    },
+    "overlay": {
+        "hint": "Drag to select an area · Esc to cancel"
+    },
+    "errors": {
+        "ocr_not_ready": "OCR engine is still loading…",
+        "api_error": "Translator API error: {error}"
+    }
+}
