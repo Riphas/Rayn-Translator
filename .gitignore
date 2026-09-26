@@ -1,4 +1,10 @@
-# Database files
-*.db
-*.db-shm
-*.db-wal
+# Compiled and build artifacts
+__pycache__/
+*.pyc
+
+# Logs
+app.log
+yolochka_data/app.log
+
+# Data files (databases)
+yolochka_data/*.db
